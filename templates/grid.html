@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Grille de Morpion</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #f7f7f7;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 90%;
+            max-width: 700px;
+            margin: 50px auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        table {
+            border-collapse: collapse;
+            margin: 0 auto;
+            background: #eaeaea;
+        }
+        td {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #333;
+            text-align: center;
+            vertical-align: middle;
+            font-size: 24px;
+            transition: background 0.3s;
+        }
+        td a {
+            display: block;
+            width: 100%;
+            height: 100%;
+            text-decoration: none;
+            color: inherit;
+            line-height: 60px;
+        }
+        td:hover {
+            background: #d3d3d3;
+        }
+        .info {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if winner %}
+            {% if winner == "Tie" %}
+                <h1>Égalité !</h1>
+            {% else %}
+                <h1>Victoire de l'équipe {{ winner|capitalize }} !</h1>
+            {% endif %}
+        {% else %}
+            <div class="info">
+                <h2>Tour : {{ turn + 1 }}</h2>
+                {% if current_phase %}
+                    <p>Les joueurs de rôle <strong>{{ current_phase }}</strong> (Red et Blue) jouent simultanément.</p>
+                {% else %}
+                    <p>À vous de jouer, équipe {{ current_player.team|capitalize }}{% if current_player.role %} ({{ current_player.role }}){% endif %}.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+        <table>
+            {% for i in range(grid_size) %}
+                <tr>
+                    {% for j in range(grid_size) %}
+                        <td style="background: 
+                            {% if grid[i][j] == 'red' %}
+                                #ffcccc
+                            {% elif grid[i][j] == 'blue' %}
+                                #ccccff
+                            {% elif grid[i][j] == 'yellow' %}
+                                #ffff99
+                            {% else %}
+                                inherit
+                            {% endif %};">
+                            {% if grid[i][j] == '' and not winner %}
+                                <a href="{{ url_for('move', row=i, col=j) }}"> </a>
+                            {% else %}
+                                {{ grid[i][j] }}
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>
