@@ -5,7 +5,7 @@
     <title>Défi d'Algorithmie</title>
     <style>
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: Arial, sans-serif;
             background: #f7f7f7;
             margin: 0;
             padding: 0;
@@ -17,7 +17,7 @@
             background: #fff;
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
         h1 {
             text-align: center;
@@ -48,7 +48,7 @@
             font-size: 16px;
             border-radius: 5px;
             cursor: pointer;
-            transition: background 0.3s ease;
+            transition: background 0.3s;
         }
         button:hover {
             background: #555;
@@ -59,7 +59,7 @@
     <div class="container">
         <h1>Défi d'Algorithmie</h1>
         <p>{{ challenge_text }}</p>
-        <form method="post" action="{{ url_for('submit_challenge', row=row, col=col) }}">
+        <form method="post" action="{{ url_for('submit_challenge', game_id=game_id, row=row, col=col) }}">
             <textarea name="code" id="codeArea" placeholder="Écrivez votre solution ici..."></textarea>
             <button type="submit">Soumettre la solution</button>
         </form>
@@ -73,9 +73,7 @@
                     e.preventDefault();
                     var start = this.selectionStart;
                     var end = this.selectionEnd;
-                    // Insérer une tabulation au lieu de changer de focus
                     this.value = this.value.substring(0, start) + "\t" + this.value.substring(end);
-                    // Placer le curseur après la tabulation insérée
                     this.selectionStart = this.selectionEnd = start + 1;
                 }
             });

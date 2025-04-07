@@ -1,82 +1,81 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+import uuid
 import traceback
 
 app = Flask(__name__)
 app.secret_key = "mysecretkey"
 
-# Variable globale pour stocker l'état du jeu
-game = None
+
+# Dictionnaire global pour stocker les parties actives (clé: game_id)
+games = {}
 
 class Game:
     def __init__(self, num_players):
         self.num_players = num_players
         self.grid_size = 3 if num_players == 2 else 5
-        # Grille d'affichage : chaque case contiendra le nom de l'équipe, "yellow" ou vide
+        # Grille d'affichage
         self.grid = [['' for _ in range(self.grid_size)] for _ in range(self.grid_size)]
-        # Grille de gestion interne pour le défi, avec les informations par case
+        # Grille de gestion interne pour les défis
         self.cells = [
             [{"owner": None, "first_solver": None, "failed": set(), "yellow": False} for _ in range(self.grid_size)]
             for _ in range(self.grid_size)
         ]
         if num_players == 2:
-            self.turn_order = [
-                {'team': 'red'},
-                {'team': 'blue'}
-            ]
+            self.roles = [{'team': 'red'}, {'team': 'blue'}]
             self.win_count = 3
         else:
-            # Pour le mode 4 joueurs, on travaille en phases simultanées :
-            # les deux joueurs ayant le rôle "p1" jouent en même temps, puis ceux en "p2".
-            self.turn_order = [
+            self.roles = [
                 {'team': 'red', 'role': 'p1'},
                 {'team': 'blue', 'role': 'p1'},
                 {'team': 'red', 'role': 'p2'},
                 {'team': 'blue', 'role': 'p2'}
             ]
             self.win_count = 5
-            # Dictionnaire pour stocker les coups en attente pour la phase en cours
             self.pending_moves = {}
-            # Définir la phase actuelle (p1 ou p2)
-            self.current_phase = "p1"
+        self.players = []
         self.current_turn = 0
         self.winner = None
 
+    def add_player(self, name):
+        if len(self.players) < len(self.roles):
+            role = self.roles[len(self.players)]
+            player = {"name": name, "team": role["team"]}
+            if "role" in role:
+                player["role"] = role["role"]
+            self.players.append(player)
+            return player
+        else:
+            return None
+
     def current_player(self):
-        # Pour le mode 2 joueurs, renvoie le joueur courant
-        return self.turn_order[self.current_turn % len(self.turn_order)]
+        if not self.players:
+            return None
+        return self.players[self.current_turn % len(self.players)]
 
     def attempt_challenge(self, row, col, player, code):
         cell = self.cells[row][col]
-        # Si la case est bloquée (jaune), aucune tentative n'est possible.
         if cell["yellow"]:
             return False, "La case est bloquée (jaune), aucune tentative possible."
-        # Si la case est déjà marquée, on vérifie que le joueur ne l'a pas déjà remportée en premier,
-        # et qu'il n'a pas déjà échoué sur cette case.
         if cell["owner"] is not None:
             if cell["first_solver"] == player["team"]:
                 return False, "Vous ne pouvez pas réessayer sur une case que vous avez remportée en premier."
             if player["team"] in cell["failed"]:
                 return False, "Vous avez déjà tenté de capturer cette case et échoué."
-        # Évaluation du code soumis par le joueur
         try:
             local_env = {}
             exec(code, {}, local_env)
             if "addition" not in local_env or not callable(local_env["addition"]):
                 raise Exception("La fonction addition n'est pas définie correctement.")
             func = local_env["addition"]
-            # Tests simples de vérification
             if func(2, 3) != 5 or func(10, 20) != 30:
                 raise Exception("La fonction addition ne retourne pas les résultats attendus.")
         except Exception as e:
-            # En cas d'erreur, si la case était vide on la bloque en jaune,
-            # sinon on enregistre l'échec pour l'équipe qui a tenté.
             if cell["owner"] is None:
                 cell["yellow"] = True
                 self.grid[row][col] = "yellow"
             else:
                 cell["failed"].add(player["team"])
-            return False, f"Erreur : {str(e)}"
-        # Si la solution est correcte, la case est marquée (ou reprise) par l'équipe
+            return False, "Wrong Answer"
         if cell["owner"] is None:
             cell["owner"] = player["team"]
             cell["first_solver"] = player["team"]
@@ -88,7 +87,6 @@ class Game:
     def check_win(self, team):
         n = self.grid_size
         k = self.win_count
-
         # Vérification des lignes
         for row in range(n):
             count = 0
@@ -99,7 +97,6 @@ class Game:
                         return True
                 else:
                     count = 0
-
         # Vérification des colonnes
         for col in range(n):
             count = 0
@@ -110,7 +107,6 @@ class Game:
                         return True
                 else:
                     count = 0
-
         # Vérification des diagonales (haut-gauche vers bas-droit)
         for row in range(n):
             for col in range(n):
@@ -123,7 +119,6 @@ class Game:
                         j += 1
                     if count >= k:
                         return True
-
         # Vérification des diagonales (haut-droit vers bas-gauche)
         for row in range(n):
             for col in range(n):
@@ -136,178 +131,205 @@ class Game:
                         j -= 1
                     if count >= k:
                         return True
-
         return False
+
+    def is_full(self):
+        """
+        Vérifie si toutes les cases sont marquées.
+        """
+        for row in self.grid:
+            for cell in row:
+                if cell == '':
+                    return False  # Il y a encore des cases vides
+        return True  # Toutes les cases sont marquées
 
     def check_tie(self):
         """
-        Vérifie si aucune séquence gagnante n'est possible (c'est-à-dire si,
-        dans toutes les lignes, colonnes et diagonales, il existe un segment
-        de longueur 'win_count' contenant une case bloquée en jaune).
+        Vérifie si la grille est pleine et qu'il n'y a plus de possibilité de victoire.
         """
-        n = self.grid_size
-        k = self.win_count
-
-        def segment_available(positions):
-            for (i, j) in positions:
-                if self.cells[i][j]["yellow"]:
-                    return False
+        # La grille doit être pleine et il ne doit pas y avoir de gagnant
+        if self.is_full() and self.winner is None:
+            # Si la grille est pleine et qu'il n'y a pas de gagnant, c'est une égalité
             return True
-
-        # Lignes
-        for i in range(n):
-            for j in range(n - k + 1):
-                positions = [(i, x) for x in range(j, j + k)]
-                if segment_available(positions):
-                    return False
-
-        # Colonnes
-        for j in range(n):
-            for i in range(n - k + 1):
-                positions = [(x, j) for x in range(i, i + k)]
-                if segment_available(positions):
-                    return False
-
-        # Diagonales (haut-gauche vers bas-droit)
-        for i in range(n - k + 1):
-            for j in range(n - k + 1):
-                positions = [(i + d, j + d) for d in range(k)]
-                if segment_available(positions):
-                    return False
-
-        # Diagonales (haut-droit vers bas-gauche)
-        for i in range(n - k + 1):
-            for j in range(k - 1, n):
-                positions = [(i + d, j - d) for d in range(k)]
-                if segment_available(positions):
-                    return False
-
-        return True
+        return False
 
     def update_winner(self):
-        # Vérification de la victoire pour chaque équipe
-        for player in self.turn_order:
+        for player in self.players:
             team = player["team"]
             if self.check_win(team):
                 self.winner = team
                 return
-        # Si aucune équipe n'a gagné et qu'aucun segment jouable ne reste, c'est une égalité
         if self.check_tie():
             self.winner = "Tie"
 
+# Route d'accueil pour créer une nouvelle partie (l'hôte saisit son nom et le nombre de joueurs)
 @app.route('/', methods=["GET", "POST"])
 def home():
-    global game
     if request.method == "POST":
-        num_players = int(request.form.get("num_players"))
+        try:
+            num_players = int(request.form.get("num_players"))
+        except:
+            flash("Veuillez entrer un nombre valide.")
+            return render_template("home.html")
         if num_players not in [2, 4]:
-            error = "Nombre de joueurs invalide. Veuillez choisir 2 ou 4."
-            return render_template("home.html", error=error)
+            flash("Nombre de joueurs invalide. Veuillez choisir 2 ou 4.")
+            return render_template("home.html")
+        host_name = request.form.get("host_name")
+        if not host_name:
+            flash("Veuillez entrer votre nom.")
+            return render_template("home.html")
+        game_id = str(uuid.uuid4())
         game = Game(num_players)
-        return redirect(url_for("grid"))
+        # Ajout automatique de l'hôte à la partie
+        game.add_player(host_name)
+        # Stocker le nom de l'hôte dans la session
+        session["player_name"] = host_name
+        games[game_id] = game
+        flash("Partie créée avec succès. Partagez le lien d'invitation avec vos amis.")
+        return redirect(url_for("waiting", game_id=game_id))
     return render_template("home.html")
 
-@app.route('/grid')
-def grid():
-    global game
-    if not game:
+
+# Page d'invitation qui affiche le lien à partager
+@app.route('/invite/<game_id>')
+def invite(game_id):
+    if game_id not in games:
+        flash("Partie inexistante.")
         return redirect(url_for("home"))
-    # Pour le mode 4 joueurs, on transmet la phase courante afin d'afficher le message adéquat
-    if game.num_players == 4:
-        return render_template("grid.html",
-                               grid=game.grid,
-                               grid_size=game.grid_size,
-                               current_phase=game.current_phase,
-                               winner=game.winner,
-                               turn=game.current_turn)
-    else:
-        current_player = game.current_player() if not game.winner else None
-        return render_template("grid.html",
-                               grid=game.grid,
-                               grid_size=game.grid_size,
-                               current_player=current_player,
-                               winner=game.winner,
-                               turn=game.current_turn)
+    join_url = request.url_root + "join/" + game_id
+    return render_template("invite.html", join_url=join_url, game_id=game_id, num_players=games[game_id].num_players)
 
-@app.route('/move/<int:row>/<int:col>')
-def move(row, col):
-    global game
-    if not game or game.winner:
-        return redirect(url_for("grid"))
-    # Redirige vers la page du défi
-    return redirect(url_for("challenge", row=row, col=col))
+# Route pour rejoindre une partie
+@app.route('/join/<game_id>', methods=["GET", "POST"])
+def join(game_id):
+    if game_id not in games:
+        flash("Partie inexistante.")
+        return redirect(url_for("home"))
+    game = games[game_id]
+    if request.method == "POST":
+        name = request.form.get("name")
+        if not name:
+            flash("Veuillez entrer votre nom.")
+            return redirect(url_for("join", game_id=game_id))
+        player = game.add_player(name)
+        if not player:
+            flash("La partie est déjà complète.")
+            return redirect(url_for("home"))
+        # Stocker le nom du joueur dans la session
+        session["player_name"] = name
+        if len(game.players) < game.num_players:
+            return render_template("waiting.html", game=game, game_id=game_id)
+        else:
+            flash("La partie peut commencer !")
+            return redirect(url_for("grid", game_id=game_id))
+    return render_template("join.html", game_id=game_id)
 
-@app.route('/challenge/<int:row>/<int:col>', methods=["GET"])
-def challenge(row, col):
-    global game
-    if not game or game.winner:
-        return redirect(url_for("grid"))
+
+# Page d'attente si la partie n'est pas complète
+@app.route('/waiting/<game_id>')
+def waiting(game_id):
+    if game_id not in games:
+        flash("Partie inexistante.")
+        return redirect(url_for("home"))
+    game = games[game_id]
+    return render_template("waiting.html", game=game, game_id=game_id)
+
+# Affichage de la grille (la partie démarre une fois tous les joueurs réunis)
+@app.route('/grid/<game_id>')
+def grid(game_id):
+    if game_id not in games:
+        flash("Partie inexistante.")
+        return redirect(url_for("home"))
+    game = games[game_id]
+    if len(game.players) < game.num_players:
+        flash("La partie n'a pas encore assez de joueurs.")
+        return redirect(url_for("waiting", game_id=game_id))
+    current_player = game.current_player() if not game.winner else None
+    return render_template("grid.html",
+                           grid=game.grid,
+                           grid_size=game.grid_size,
+                           current_player=current_player,
+                           winner=game.winner,
+                           turn=game.current_turn,
+                           game_id=game_id,
+                           player_name=session.get("player_name"))
+
+
+# Route pour sélectionner une case (redirection vers le défi)
+@app.route('/move/<game_id>/<int:row>/<int:col>')
+def move(game_id, row, col):
+    if game_id not in games:
+        return redirect(url_for("home"))
+    game = games[game_id]
+    current_player = game.current_player()
+    if not current_player or session.get("player_name") != current_player["name"]:
+        flash("Ce n'est pas votre tour.")
+        return redirect(url_for("grid", game_id=game_id))
+    if game.winner:
+        return redirect(url_for("grid", game_id=game_id))
+    return redirect(url_for("challenge", game_id=game_id, row=row, col=col))
+
+
+# Page du défi d'algorithmie
+@app.route('/challenge/<game_id>/<int:row>/<int:col>', methods=["GET"])
+def challenge(game_id, row, col):
+    if game_id not in games:
+        return redirect(url_for("home"))
+    game = games[game_id]
+    if game.winner:
+        return redirect(url_for("grid", game_id=game_id))
     cell = game.cells[row][col]
     if cell["yellow"]:
-        return redirect(url_for("grid"))
+        return redirect(url_for("grid", game_id=game_id))
     challenge_text = ("Écrire une fonction 'addition' qui prend deux entiers et renvoie leur somme. "
                       "Exemple : addition(2, 3) doit renvoyer 5.")
-    return render_template("challenge.html", row=row, col=col, challenge_text=challenge_text)
+    return render_template("challenge.html", row=row, col=col, challenge_text=challenge_text, game_id=game_id)
 
-@app.route('/submit_challenge/<int:row>/<int:col>', methods=["POST"])
-def submit_challenge(row, col):
-    global game
-    if not game or game.winner:
-        return redirect(url_for("grid"))
+# Traitement de la soumission du défi
+@app.route('/submit_challenge/<game_id>/<int:row>/<int:col>', methods=["POST"])
+def submit_challenge(game_id, row, col):
+    if game_id not in games:
+        return redirect(url_for("home"))
+    
+    game = games[game_id]
+    
+    if game.winner:
+        return redirect(url_for("grid", game_id=game_id))
+    
     code = request.form.get("code")
-    # Traitement en fonction du mode de jeu
-    if game.num_players == 4:
-        # Pour le mode 4 joueurs, on attend la soumission simultanée des deux joueurs de la phase en cours.
-        current_player = None
-        # Identifier le joueur qui soumet et vérifier que son rôle correspond à la phase en cours
-        for player in game.turn_order:
-            if player.get("role") == game.current_phase:
-                # On se base sur la couleur pour différencier les équipes (red et blue)
-                # On ne peut pas déterminer précisément le "current_player" ici car les deux joueurs jouent simultanément.
-                # On utilisera directement la clé de l'équipe pour le stockage.
-                if player["team"] in game.pending_moves:
-                    continue
-                else:
-                    current_player = player
-                    break
-
-        # Ici, on suppose que le joueur qui soumet a bien le rôle correspondant à la phase courante.
-        # Stockage du coup en attente pour l'équipe correspondante.
-        # On utilise la couleur extraite depuis la soumission du formulaire.
-        # Pour simplifier, on suppose que l'équipe du joueur est celle indiquée dans la route de soumission.
-        # Dans une application réelle, l'authentification permettrait de déterminer cela de manière fiable.
-        # Nous récupérons la couleur depuis le paramètre "code" via la session ou autre mécanisme.
-        # Ici, nous utiliserons un simple mécanisme de simulation en utilisant une variable temporaire.
-        # Pour cet exemple, nous allons supposer que le joueur est identifié par un paramètre "team" dans le formulaire.
-        team = request.form.get("team")
-        if not team:
-            return redirect(url_for("grid"))
-        game.pending_moves[team] = {"row": row, "col": col, "code": code}
-        # Si les deux équipes ont soumis leur coup pour la phase en cours, on les traite simultanément.
+    current_player = game.current_player()
+    
+    # Gestion des coups simultanés pour les joueurs 2 en mode 4 joueurs
+    if game.num_players == 4 and current_player.get("role") == "p2":
+        game.pending_moves[current_player["team"]] = {"row": row, "col": col, "code": code}
         if len(game.pending_moves) == 2:
-            for team_key, move in game.pending_moves.items():
-                dummy_player = {"team": team_key, "role": game.current_phase}
+            for team, move in game.pending_moves.items():
+                dummy_player = {"team": team, "role": "p2"}
                 success, message = game.attempt_challenge(move["row"], move["col"], dummy_player, move["code"])
-                # Vous pouvez enregistrer ou afficher le message ici si nécessaire.
-            game.pending_moves.clear()
+            game.pending_moves = {}
+            game.current_turn += 2
             game.update_winner()
-            # Changement de phase :
-            if game.current_phase == "p1":
-                game.current_phase = "p2"
-            else:
-                game.current_phase = "p1"
-                # Incrémentation du tour complet (les deux phases ayant été jouées)
-                game.current_turn += 2
-        return redirect(url_for("grid"))
+        flash("Votre réponse a été soumise.")
+        return redirect(url_for("grid", game_id=game_id))
+    
     else:
-        # Mode 2 joueurs (séquentiel)
-        current_player = game.current_player()
+        # Vérifie si la réponse est correcte ou incorrecte
         success, message = game.attempt_challenge(row, col, current_player, code)
+        
         if success:
+            # Si la réponse est correcte, on passe au joueur suivant
             game.current_turn += 1
-            game.update_winner()
-        return redirect(url_for("grid"))
+        else:
+            # Si la réponse est incorrecte, on passe également au joueur suivant
+            game.current_turn += 1
+
+        # Vérifie la victoire à chaque tour
+        game.update_winner()
+        
+        # Affiche le message, qu'il soit bon ou mauvais
+        flash(message)
+        return redirect(url_for("grid", game_id=game_id))
+
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
+    app.run(debug=True)

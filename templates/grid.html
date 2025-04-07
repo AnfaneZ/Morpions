@@ -5,7 +5,7 @@
     <title>Grille de Morpion</title>
     <style>
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: Arial, sans-serif;
             background: #f7f7f7;
             margin: 0;
             padding: 0;
@@ -17,7 +17,7 @@
             background: #fff;
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
             text-align: center;
         }
         table {
@@ -31,7 +31,7 @@
             border: 2px solid #333;
             text-align: center;
             vertical-align: middle;
-            font-size: 24px;
+            font-size: 36px;
             transition: background 0.3s;
         }
         td a {
@@ -48,10 +48,28 @@
         .info {
             margin-bottom: 20px;
         }
+        .flash-message {
+            padding: 10px;
+            background: #eee;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .not-your-turn {
+            font-style: italic;
+            color: #555;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for message in messages %}
+              <div class="flash-message">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
         {% if winner %}
             {% if winner == "Tie" %}
                 <h1>Égalité !</h1>
@@ -61,31 +79,38 @@
         {% else %}
             <div class="info">
                 <h2>Tour : {{ turn + 1 }}</h2>
-                {% if current_phase %}
-                    <p>Les joueurs de rôle <strong>{{ current_phase }}</strong> (Red et Blue) jouent simultanément.</p>
-                {% else %}
-                    <p>À vous de jouer, équipe {{ current_player.team|capitalize }}{% if current_player.role %} ({{ current_player.role }}){% endif %}.</p>
+                {% if current_player %}
+                    <p>À vous de jouer, {{ current_player.name }} ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}).</p>
                 {% endif %}
             </div>
+            {% if player_name != current_player.name %}
+                <div class="not-your-turn">Ce n'est pas votre tour. Veuillez patienter...</div>
+            {% endif %}
         {% endif %}
         <table>
-            {% for i in range(grid_size) %}
+            {% for row_idx in range(grid_size) %}
                 <tr>
-                    {% for j in range(grid_size) %}
+                    {% for col_idx in range(grid_size) %}
                         <td style="background: 
-                            {% if grid[i][j] == 'red' %}
+                            {% if grid[row_idx][col_idx] == 'red' %}
                                 #ffcccc
-                            {% elif grid[i][j] == 'blue' %}
+                            {% elif grid[row_idx][col_idx] == 'blue' %}
                                 #ccccff
-                            {% elif grid[i][j] == 'yellow' %}
+                            {% elif grid[row_idx][col_idx] == 'yellow' %}
                                 #ffff99
                             {% else %}
                                 inherit
                             {% endif %};">
-                            {% if grid[i][j] == '' and not winner %}
-                                <a href="{{ url_for('move', row=i, col=j) }}"> </a>
+                            {% if grid[row_idx][col_idx] == '' and not winner and player_name == current_player.name %}
+                                <a href="{{ url_for('move', game_id=game_id, row=row_idx, col=col_idx) }}"> </a>
                             {% else %}
-                                {{ grid[i][j] }}
+                                {% if grid[row_idx][col_idx] == 'red' %}
+                                    <span style="color: red;">&#10006;</span>
+                                {% elif grid[row_idx][col_idx] == 'blue' %}
+                                    <span style="color: blue;">&#9711;</span>
+                                {% elif grid[row_idx][col_idx] == 'yellow' %}
+                                    <span style="color: orange;">Y</span>
+                                {% endif %}
                             {% endif %}
                         </td>
                     {% endfor %}
@@ -93,5 +118,12 @@
             {% endfor %}
         </table>
     </div>
+    {% if not winner %}
+    <script>
+        setTimeout(function() {
+            location.reload();
+        }, 1000);
+    </script>
+    {% endif %}
 </body>
 </html>

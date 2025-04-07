@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>En Attente...</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7f7f7; }
+    .container { max-width: 600px; margin: 50px auto; background: #fff; padding: 30px; border-radius: 10px; text-align: center; }
+    input { width: 100%; padding: 10px; font-size: 16px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>En Attente...</h1>
+    <p>La partie n'est pas encore complète.</p>
+    <p>Nombre de joueurs actuellement : {{ game.players|length }} / {{ game.num_players }}</p>
+    <p>Invitation :<br>
+      Partagez ce lien avec vos amis pour qu'ils rejoignent la partie :<br>
+      <input type="text" value="{{ request.url_root }}join/{{ game_id }}" readonly>
+    </p>
+    <p>Veuillez patienter...</p>
+  </div>
+  {% if game.players|length < game.num_players %}
+    <script>
+      setTimeout(function(){ location.reload(); }, 5000);
+    </script>
+  {% else %}
+    <script>
+      window.location.href = "{{ url_for('grid', game_id=game_id) }}";
+    </script>
+  {% endif %}
+</body>
+</html>
