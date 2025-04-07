@@ -54,28 +54,28 @@ class Game:
 
     def attempt_challenge(self, row, col, player, code):
         cell = self.cells[row][col]
-        if cell["yellow"]:
-            return False, "La case est bloquée (jaune), aucune tentative possible."
-        if cell["owner"] is not None:
-            if cell["first_solver"] == player["team"]:
-                return False, "Vous ne pouvez pas réessayer sur une case que vous avez remportée en premier."
-            if player["team"] in cell["failed"]:
-                return False, "Vous avez déjà tenté de capturer cette case et échoué."
+        # Vérifier si le joueur a déjà tenté sur cette case et échoué
+        if player["team"] in cell["failed"]:
+            return False, "Vous avez déjà tenté de capturer cette case et échoué."
+        # Si la case est déjà marquée et que le joueur l'a remportée en premier, il ne peut pas réessayer
+        if cell["owner"] is not None and cell["first_solver"] == player["team"]:
+            return False, "Vous ne pouvez pas réessayer sur une case que vous avez remportée en premier."
+
         try:
             local_env = {}
             exec(code, {}, local_env)
             if "addition" not in local_env or not callable(local_env["addition"]):
                 raise Exception("La fonction addition n'est pas définie correctement.")
             func = local_env["addition"]
+            # Tests simples de vérification
             if func(2, 3) != 5 or func(10, 20) != 30:
                 raise Exception("La fonction addition ne retourne pas les résultats attendus.")
         except Exception as e:
-            if cell["owner"] is None:
-                cell["yellow"] = True
-                self.grid[row][col] = "yellow"
-            else:
-                cell["failed"].add(player["team"])
+            # En cas d'erreur, on n'interdit qu'au joueur qui s'est trompé de réessayer sur cette case
+            cell["failed"].add(player["team"])
             return False, "Wrong Answer"
+
+        # Si la solution est correcte :
         if cell["owner"] is None:
             cell["owner"] = player["team"]
             cell["first_solver"] = player["team"]
@@ -83,6 +83,7 @@ class Game:
             cell["owner"] = player["team"]
         self.grid[row][col] = cell["owner"]
         return True, "Bonne réponse, case marquée."
+
 
     def check_win(self, team):
         n = self.grid_size
