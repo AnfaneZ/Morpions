@@ -36,16 +36,31 @@ class Game:
         self.current_turn = 0
         self.winner = None
 
-    def add_player(self, name):
-        if len(self.players) < len(self.roles):
-            role = self.roles[len(self.players)]
-            player = {"name": name, "team": role["team"]}
-            if "role" in role:
-                player["role"] = role["role"]
-            self.players.append(player)
-            return player
+    def add_player(self, name, team, role=None):
+        # Empêche les doublons de nom
+        for player in self.players:
+            if player["name"] == name:
+                return None  # nom déjà pris
+
+        # En partie à 2 joueurs, on bloque si l'équipe est déjà utilisée
+        if self.num_players == 2:
+            for player in self.players:
+                if player["team"] == team:
+                    return None  # équipe déjà utilisée en 1v1
         else:
-            return None
+            # En 4 joueurs, on bloque si équipe + rôle sont déjà pris
+            for player in self.players:
+                if player["team"] == team and player.get("role") == role:
+                    return None  # équipe + rôle déjà pris
+
+        # Si tout est ok, on crée le joueur
+        player = {"name": name, "team": team}
+        if role:
+            player["role"] = role
+        self.players.append(player)
+        return player
+
+
 
     def current_player(self):
         if not self.players:
@@ -54,10 +69,12 @@ class Game:
 
     def attempt_challenge(self, row, col, player, code):
         cell = self.cells[row][col]
-        # Vérifier si le joueur a déjà tenté sur cette case et échoué
+
+        # Si le joueur a déjà tenté sur cette case (jaune ou pas), il ne peut plus la rejouer
         if player["team"] in cell["failed"]:
             return False, "Vous avez déjà tenté de capturer cette case et échoué."
-        # Si la case est déjà marquée et que le joueur l'a remportée en premier, il ne peut pas réessayer
+
+        # Si la case est déjà possédée par le joueur qui l'a capturée en premier, il ne peut pas réessayer
         if cell["owner"] is not None and cell["first_solver"] == player["team"]:
             return False, "Vous ne pouvez pas réessayer sur une case que vous avez remportée en premier."
 
@@ -67,20 +84,24 @@ class Game:
             if "addition" not in local_env or not callable(local_env["addition"]):
                 raise Exception("La fonction addition n'est pas définie correctement.")
             func = local_env["addition"]
-            # Tests simples de vérification
+            # Vérification simple
             if func(2, 3) != 5 or func(10, 20) != 30:
                 raise Exception("La fonction addition ne retourne pas les résultats attendus.")
-        except Exception as e:
-            # En cas d'erreur, on n'interdit qu'au joueur qui s'est trompé de réessayer sur cette case
+        except Exception:
+            # ❌ Tentative échouée : on enregistre l'échec pour cette équipe
             cell["failed"].add(player["team"])
+            if cell["owner"] is None:
+                cell["yellow"] = True
+                self.grid[row][col] = "yellow"
             return False, "Wrong Answer"
 
-        # Si la solution est correcte :
+        # ✅ Tentative réussie : la case est capturée
         if cell["owner"] is None:
             cell["owner"] = player["team"]
             cell["first_solver"] = player["team"]
         else:
             cell["owner"] = player["team"]
+
         self.grid[row][col] = cell["owner"]
         return True, "Bonne réponse, case marquée."
 
@@ -182,7 +203,10 @@ def home():
         game_id = str(uuid.uuid4())
         game = Game(num_players)
         # Ajout automatique de l'hôte à la partie
-        game.add_player(host_name)
+        # Pour l’hôte, on attribue par défaut l’équipe rouge et le rôle p1 si nécessaire
+        team = "red"
+        role = "p1" if num_players == 4 else None
+        game.add_player(host_name, team, role)
         # Stocker le nom de l'hôte dans la session
         session["player_name"] = host_name
         games[game_id] = game
@@ -200,40 +224,50 @@ def invite(game_id):
     join_url = request.url_root + "join/" + game_id
     return render_template("invite.html", join_url=join_url, game_id=game_id, num_players=games[game_id].num_players)
 
-# Route pour rejoindre une partie
 @app.route('/join/<game_id>', methods=["GET", "POST"])
 def join(game_id):
     if game_id not in games:
         flash("Partie inexistante.")
         return redirect(url_for("home"))
     game = games[game_id]
+
     if request.method == "POST":
         name = request.form.get("name")
-        if not name:
-            flash("Veuillez entrer votre nom.")
+        team = request.form.get("team")
+        role = request.form.get("role") if game.num_players == 4 else None
+
+        if not name or not team or (game.num_players == 4 and not role):
+            flash("Tous les champs sont requis.")
             return redirect(url_for("join", game_id=game_id))
-        player = game.add_player(name)
+
+        player = game.add_player(name, team, role)
         if not player:
-            flash("La partie est déjà complète.")
-            return redirect(url_for("home"))
-        # Stocker le nom du joueur dans la session
+            flash("Ce nom, cette équipe ou ce rôle est déjà pris.")
+            return redirect(url_for("join", game_id=game_id))
+
         session["player_name"] = name
-        if len(game.players) < game.num_players:
-            return render_template("waiting.html", game=game, game_id=game_id)
-        else:
-            flash("La partie peut commencer !")
-            return redirect(url_for("grid", game_id=game_id))
-    return render_template("join.html", game_id=game_id)
+        return redirect(url_for("waiting", game_id=game_id))
+
+    # ✅ ici on passe la variable game au template
+    return render_template("join.html", game_id=game_id, game=game)
 
 
-# Page d'attente si la partie n'est pas complète
+
+
 @app.route('/waiting/<game_id>')
 def waiting(game_id):
     if game_id not in games:
         flash("Partie inexistante.")
         return redirect(url_for("home"))
+
     game = games[game_id]
+
+    if len(game.players) >= game.num_players:
+        return redirect(url_for("grid", game_id=game_id))
+
     return render_template("waiting.html", game=game, game_id=game_id)
+
+
 
 # Affichage de la grille (la partie démarre une fois tous les joueurs réunis)
 @app.route('/grid/<game_id>')
@@ -253,6 +287,7 @@ def grid(game_id):
                            winner=game.winner,
                            turn=game.current_turn,
                            game_id=game_id,
+                           cells=game.cells,
                            player_name=session.get("player_name"))
 
 
@@ -279,12 +314,10 @@ def challenge(game_id, row, col):
     game = games[game_id]
     if game.winner:
         return redirect(url_for("grid", game_id=game_id))
-    cell = game.cells[row][col]
-    if cell["yellow"]:
-        return redirect(url_for("grid", game_id=game_id))
     challenge_text = ("Écrire une fonction 'addition' qui prend deux entiers et renvoie leur somme. "
                       "Exemple : addition(2, 3) doit renvoyer 5.")
     return render_template("challenge.html", row=row, col=col, challenge_text=challenge_text, game_id=game_id)
+
 
 # Traitement de la soumission du défi
 @app.route('/submit_challenge/<game_id>/<int:row>/<int:col>', methods=["POST"])

@@ -88,34 +88,42 @@
             {% endif %}
         {% endif %}
         <table>
-            {% for row_idx in range(grid_size) %}
-                <tr>
-                    {% for col_idx in range(grid_size) %}
-                        <td style="background: 
-                            {% if grid[row_idx][col_idx] == 'red' %}
-                                #ffcccc
-                            {% elif grid[row_idx][col_idx] == 'blue' %}
-                                #ccccff
-                            {% elif grid[row_idx][col_idx] == 'yellow' %}
-                                #ffff99
-                            {% else %}
-                                inherit
-                            {% endif %};">
-                            {% if grid[row_idx][col_idx] == '' and not winner and player_name == current_player.name %}
-                                <a href="{{ url_for('move', game_id=game_id, row=row_idx, col=col_idx) }}"> </a>
-                            {% else %}
-                                {% if grid[row_idx][col_idx] == 'red' %}
-                                    <span style="color: red;">&#10006;</span>
-                                {% elif grid[row_idx][col_idx] == 'blue' %}
-                                    <span style="color: blue;">&#9711;</span>
-                                {% elif grid[row_idx][col_idx] == 'yellow' %}
-                                    <span style="color: orange;">Y</span>
+            {% for i in range(grid_size) %}
+            <tr>
+                {% for j in range(grid_size) %}
+                    {% set cell_color = grid[i][j] %}
+                    {% set cell = cells[i][j] %}
+                    <td style="background: 
+                        {% if grid[i][j] == 'red' %}
+                            #ffcccc
+                        {% elif grid[i][j] == 'blue' %}
+                            #ccccff
+                        {% elif grid[i][j] == 'yellow' %}
+                            #ffff99
+                        {% else %}
+                            inherit
+                        {% endif %}; text-align: center; font-size: 28px; font-weight: bold;">
+                        
+                        {% if (grid[i][j] == '' or (grid[i][j] == 'yellow' and current_player and current_player.team not in cells[i][j].failed)) and not winner %}
+                            <a href="{{ url_for('move', game_id=game_id, row=i, col=j) }}" style="display: block; width: 100%; height: 100%; text-decoration: none; color: inherit;">
+                                {% if grid[i][j] == 'yellow' %}
+                                    Y
                                 {% endif %}
+                            </a>
+                        {% else %}
+                            {% if grid[i][j] == 'red' %}
+                                <span style="color: red;">&#10006;</span>
+                            {% elif grid[i][j] == 'blue' %}
+                                <span style="color: blue;">&#9711;</span>
+                            {% elif grid[i][j] == 'yellow' %}
+                                <span style="color: #e6ac00;">Y</span>
                             {% endif %}
-                        </td>
-                    {% endfor %}
-                </tr>
-            {% endfor %}
+                        {% endif %}
+                </td>
+                
+                {% endfor %}
+            </tr>
+        {% endfor %}          
         </table>
     </div>
     {% if not winner %}
