@@ -1,0 +1,26 @@
+<!-- templates/loading.html -->
+<!doctype html>
+<html>
+<head>
+    <title>Chargement du défi...</title>
+    <meta http-equiv="refresh" content="2;url={{ url_for('challenge_ready', game_id=game_id, row=row, col=col) }}">
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 100px; }
+        .loader {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <h2>Génération du défi en cours...</h2>
+    <div class="loader"></div>
+    <p>Merci de patienter</p>
+</body>
+</html>

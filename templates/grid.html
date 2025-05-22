@@ -80,7 +80,7 @@
             <div class="info">
                 <h2>Tour : {{ turn + 1 }}</h2>
                 {% if current_player %}
-                    <p>À vous de jouer, {{ current_player.name }} ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}).</p>
+                    <p>C'est au joueur {{ current_player.name }} de jouer ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}). ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}).</p>
                 {% endif %}
             </div>
             {% if player_name != current_player.name %}
@@ -128,9 +128,9 @@
     </div>
     {% if not winner %}
     <script>
-        /*setTimeout(function() {
+        setTimeout(function() {
             location.reload();
-        }, 1000);*/
+        }, 1000);
     </script>
     {% endif %}
 </body>
