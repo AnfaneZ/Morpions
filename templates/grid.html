@@ -70,21 +70,23 @@
             {% endfor %}
           {% endif %}
         {% endwith %}
-        {% if winner %}
-            {% if winner == "Tie" %}
-                <h1>Égalité !</h1>
+            {% if winner == "draw" %}
+                <div class="alert alert-info">
+                    🤝 Match nul ! Personne n'a gagné.
+                </div>
+            {% elif winner %}
+                <div class="alert alert-success">
+                    🎉 L'équipe {{ winner }} a gagné la partie !
+                </div>
             {% else %}
-                <h1>Victoire de l'équipe {{ winner|capitalize }} !</h1>
-            {% endif %}
-        {% else %}
-            <div class="info">
-                <h2>Tour : {{ turn + 1 }}</h2>
-                {% if current_player %}
-                    <p>C'est au joueur {{ current_player.name }} de jouer ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}). ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}).</p>
-                {% endif %}
-            </div>
-            {% if player_name != current_player.name %}
-                <div class="not-your-turn">Ce n'est pas votre tour. Veuillez patienter...</div>
+                <div class="info">
+                    <h2>Tour : {{ turn + 1 }}</h2>
+                    {% if current_player %}
+                        <p>C'est au joueur {{ current_player.name }} de jouer ({{ current_player.team|capitalize }}{% if current_player.role %} - {{ current_player.role }}{% endif %}).</p>
+                    {% endif %}
+                </div>
+                {% if player_name != current_player.name %}
+                    <div class="not-your-turn">Ce n'est pas votre tour. Veuillez patienter...</div>
             {% endif %}
         {% endif %}
         <table>

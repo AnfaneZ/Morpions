@@ -42,7 +42,7 @@ class Game:
     def generate_challenge(self,row,col):
         prompt=("Génère une question de programmation en Python au format JSON avec ces clés:\n"
                 "- description: énoncé du problème,\n"
-                "- function_name: nom de la fonction de la question que tu as posé\n"
+                "- function_name: def nom_de_la_fonction\n"
                 "- précisions: le problème doit se baser sur des listes de nombre, et des concepts algorithmique,\n"
                 "- tests: liste d'objets {input: liste d'arguments, output: résultat attendu}.\n"
                 "Fournis uniquement l'objet JSON.")
@@ -101,20 +101,39 @@ class Game:
         return True,"Bonne réponse."
 
     def check_win(self):
-        lines=[]; lines.extend(self.grid)
-        lines.extend([[self.grid[r][c] for r in range(self.grid_size)] for c in range(self.grid_size)])
-        lines.append([self.grid[i][i] for i in range(self.grid_size)])
-        lines.append([self.grid[i][self.grid_size-1-i] for i in range(self.grid_size)])
-        counts={}
+        lines = []
+        lines.extend(self.grid)  # lignes horizontales
+        lines.extend([[self.grid[r][c] for r in range(self.grid_size)] for c in range(self.grid_size)])  # colonnes verticales
+        lines.append([self.grid[i][i] for i in range(self.grid_size)])  # diagonale principale
+        lines.append([self.grid[i][self.grid_size-1-i] for i in range(self.grid_size)])  # diagonale secondaire
+
         for line in lines:
-            if line[0] and all(cell==line[0] for cell in line): counts[line[0]]=counts.get(line[0],0)+1
-        for team,cnt in counts.items():
-            if cnt>=self.win_count: return team
+            if line[0] and all(cell == line[0] for cell in line):
+                return line[0]
         return None
 
+
+    def check_draw(self):
+    # Si toutes les cellules de la grille sont occupées (non vides) et pas de gagnant
+        for row in self.grid:
+            for cell in row:
+                if cell == '':
+                    return False
+        # Toutes les cases sont remplies
+        if not self.check_win():
+            return True
+        return False
+
+
     def update_winner(self):
-        w=self.check_win();
-        if w: self.winner=w
+        w = self.check_win()
+        if w:
+            self.winner = w
+        elif self.check_draw():
+            self.winner = "draw"  # ou None, ou un autre marqueur pour égalité
+        else:
+            self.winner=None
+
 
 # routes inchangés
 
@@ -180,7 +199,11 @@ def grid(game_id):
     g = games.get(game_id)
     if not g or len(g.players) < g.num_players:
         return redirect(url_for('waiting', game_id=game_id))
-    # Récupérer le nom du joueur en session
+    # Vérifie s'il y a un gagnant
+    if g.winner == "draw":
+        flash("Match nul ! La grille est remplie sans vainqueur.")
+    elif g.winner:
+        flash(f"Le gagnant est l'équipe {g.winner} !")
     player_name = session.get('player_name')
     return render_template(
         "grid.html",
@@ -191,14 +214,17 @@ def grid(game_id):
         winner=g.winner,
         turn=g.current_turn,
         game_id=game_id,
-        player_name=player_name  # passe player_name au template
+        player_name=player_name
     )
+
 @app.route('/move/<game_id>/<int:row>/<int:col>')
 def move(game_id, row, col):
     g = games.get(game_id)
     player_name = session.get('player_name')
-    # Vérification du tour
-    if not g or not g.is_player_turn(player_name):
+    if not g or g.winner:
+        flash("La partie est terminée.")
+        return redirect(url_for('grid', game_id=game_id))
+    if not g.is_player_turn(player_name):
         flash("Ce n'est pas à vous de jouer.")
         return redirect(url_for('grid', game_id=game_id))
     return redirect(url_for('challenge', game_id=game_id, row=row, col=col))
@@ -245,6 +271,9 @@ def challenge_ready(game_id, row, col):
 def submit_challenge(game_id, row, col):
     g = games[game_id]
     player_name = session.get('player_name')
+    if g.winner:
+        flash("La partie est terminée.")
+        return redirect(url_for('grid', game_id=game_id))
     if not g.is_player_turn(player_name):
         flash("Ce n'est pas à vous de jouer.")
         return redirect(url_for('grid', game_id=game_id))
@@ -254,11 +283,12 @@ def submit_challenge(game_id, row, col):
     success, msg = g.attempt_challenge(row, col, player, code)
     flash(msg)
 
-    # 🔄 Toujours passer au joueur suivant
+    # Toujours passer au joueur suivant
     g.current_turn += 1
     g.update_winner()
 
     return redirect(url_for('grid', game_id=game_id))
+
 
 
 if __name__ == '__main__':
